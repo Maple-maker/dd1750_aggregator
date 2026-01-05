@@ -1,6 +1,7 @@
 from flask import Flask, request, send_file, render_template_string
 from io import BytesIO
 import os
+import traceback
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'secret-key')
@@ -47,30 +48,3 @@ def index():
     ''')
 
 @app.route('/merge', methods=['POST'])
-def merge():
-    if 'items_pdf' not in request.files or 'admin_pdf' not in request.files:
-        return 'Both files required', 400
-    
-    items_file = request.files['items_pdf']
-    admin_file = request.files['admin_pdf']
-    
-    from pdf_parser import DD1750Parser
-    parser = DD1750Parser()
-    items_data = parser.parse_items_pdf(items_file.read())
-    admin_data = parser.parse_admin_pdf(admin_file.read())
-    
-    if not items_data:
-        return 'No items found', 400
-    
-    from form_generator import DD1750Generator
-    generator = DD1750Generator()
-    merged_pdf = generator.generate_merged_form(items_data, admin_data)
-    
-    output = BytesIO(merged_pdf)
-    output.seek(0)
-    
-    return send_file(output, mimetype='application/pdf', as_attachment=True, download_name='DD1750_Merged.pdf')
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
