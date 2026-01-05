@@ -30,18 +30,21 @@ def index():
 
 @app.route('/merge', methods=['POST'])
 def merge():
-    doc_admin = fitz.open(stream=request.files['admin_pdf'].read(), filetype="pdf")
-    doc_items = fitz.open(stream=request.files['items_pdf'].read(), filetype="pdf")
-    output = BytesIO()
-    merged = fitz.open()
-    for page in doc_admin:
-        merged.insert_pdf(doc_admin, from_page=page.number, to_page=page.number)
-    for page in doc_items:
-        if page.number < len(merged):
-            merged[page.number].show_pdf_page(merged[page.number].rect, doc_items, page.number)
-    merged.save(output)
-    output.seek(0)
-    return send_file(output, mimetype='application/pdf', download_name='merged.pdf')
+    try:
+        doc_admin = fitz.open(stream=request.files['admin_pdf'].read(), filetype="pdf")
+        doc_items = fitz.open(stream=request.files['items_pdf'].read(), filetype="pdf")
+        output = BytesIO()
+        merged = fitz.open()
+        for page in doc_admin:
+            merged.insert_pdf(doc_admin, from_page=page.number, to_page=page.number)
+        for page in doc_items:
+            if page.number < len(merged):
+                merged[page.number].show_pdf_page(merged[page.number].rect, doc_items, page.number)
+        merged.save(output)
+        output.seek(0)
+        return send_file(output, mimetype='application/pdf', download_name='merged.pdf')
+    except Exception as e:
+        return f'Error: {str(e)}', 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
