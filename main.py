@@ -1,6 +1,7 @@
 from flask import Flask, request, send_file, render_template_string
 from io import BytesIO
 import os
+import fitz  # PyMuPDF
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'secret-key')
@@ -23,16 +24,11 @@ def index():
         .upload-section { border: 2px dashed #3498db; padding: 30px; margin: 20px 0; background: #f8f9fa; }
         input[type="file"] { margin: 10px 0; width: 100%; padding: 10px; }
         button { background: #3498db; color: white; padding: 12px 24px; border: none; cursor: pointer; font-size: 16px; width: 100%; }
-        .error { color: red; padding: 10px; margin: 10px 0; }
     </style>
 </head>
 <body>
     <h1>DD1750 PDF Merger</h1>
     <p>Upload two DD1750 forms - one with items, one with admin info</p>
-    
-    {% if error %}
-    <div class="error">{{ error }}</div>
-    {% endif %}
     
     <form action="/merge" method="post" enctype="multipart/form-data">
         <div class="upload-section">
@@ -55,36 +51,40 @@ def index():
 def merge():
     try:
         if 'items_pdf' not in request.files or 'admin_pdf' not in request.files:
-            return render_template_string('<div class="error">Both files required</div><a href="/">Back</a>')
+            return 'Both files required', 400
         
         items_file = request.files['items_pdf']
         admin_file = request.files['admin_pdf']
         
-        try:
-            import pdfplumber
-        except ImportError:
-            return render_template_string('<div class="error">pdfplumber not installed. Please update requirements.txt</div><a href="/">Back</a>')
+        doc_admin = fitz.open(stream=admin_file.read(), filetype="pdf")
+        doc_items = fitz.open(stream=items_file.read(), filetype="pdf")
         
-        from pdf_parser import DD1750Parser
-        parser = DD1750Parser()
-        items_data = parser.parse_items_pdf(items_file.read())
-        admin_data = parser.parse_admin_pdf(admin_file.read())
+        output = BytesIO()
         
-        if not items_data:
-            return render_template_string('<div class="error">No items found in PDF</div><a href="/">Back</a>')
+        # Copy admin pages first
+        merged_doc = fitz.open()
         
-        from form_generator import DD1750Generator
-        generator = DD1750Generator()
-        merged_pdf = generator.generate_merged_form(items_data, admin_data)
+        for admin_page in doc_admin:
+            new_page = merged_doc.new_page(width=admin_page.rect.width, height=admin_page.rect.height)
+            new_page.show_pdf_page(admin_page.rect, doc_admin, admin_page.number)
         
-        output = BytesIO(merged_pdf)
+        # Now paste items content on top
+        for items_page in doc_items:
+            if items_page.number < len(merged_doc):
+                # Define the table area to copy (coordinates based on DD1750)
+                rect_items = fitz.Rect(40, 250, 550, 750)
+                rect_admin = fitz.Rect(40, 250, 550, 750)
+                
+                # Overlay the items content
+                merged_doc[items_page.number].show_pdf_page(
+                    rect_admin, 
+                    doc_items, 
+                    items_page.number,
+                    clip=rect_items
+                )
+        
+        merged_doc.save(output)
+        merged_doc.close()
+        
         output.seek(0)
-        
-        return send_file(output, mimetype='application/pdf', as_attachment=True, download_name='DD1750_Merged.pdf')
-    
-    except Exception as e:
-        return render_template_string(f'<div class="error">Error: {str(e)}</div><a href="/">Back</a>')
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
+        return send_file(output, mimetype='application/pdf', as_attachment=True,
