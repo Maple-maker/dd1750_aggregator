@@ -1,179 +1,161 @@
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
-from reportlab.lib import colors
-from datetime import datetime
 from typing import Dict, List
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 class DD1750Generator:
     """Generate clean DD1750 forms with proper pagination"""
     
     ITEMS_PER_PAGE = 18
-    
-    # Layout coordinates (in points, 1 inch = 72 points)
-    HEADER_Y = 180
-    TABLE_START_Y = 250
-    TABLE_END_Y = 700
     ROW_HEIGHT = 24
     
-    # Column X positions
-    COL_BOX = 40
-    COL_STOCK = 100
-    COL_NOMEN = 250
-    COL_UNIT = 580
-    COL_QTY_INIT = 620
-    COL_QTY_RUN = 670
-    COL_QTY_TOTAL = 720
+    def __init__(self):
+        logger.info("DD1750Generator initialized")
     
     def generate_merged_form(self, items: List[Dict], admin_data: Dict) -> bytes:
-        """Generate merged DD1750 PDF with proper pagination"""
-        output = io.BytesIO()
-        
-        # Calculate pages needed
-        total_items = len(items)
-        total_pages = (total_items + self.ITEMS_PER_PAGE - 1) // self.ITEMS_PER_PAGE
-        
-        # Create PDF with multiple pages
-        from reportlab.pdfgen import canvas
-        c = canvas.Canvas(output, pagesize=letter)
-        
-        for page_num in range(total_pages):
-            # Get items for this page
-            start_idx = page_num * self.ITEMS_PER_PAGE
-            end_idx = min(start_idx + self.ITEMS_PER_PAGE, total_items)
-            page_items = items[start_idx:end_idx]
+        """Generate merged DD1750 PDF"""
+        try:
+            output = io.BytesIO()
             
-            # Draw the page
-            self._draw_page(c, page_items, admin_data, page_num + 1, total_pages)
+            # Calculate pages needed
+            total_items = len(items)
+            total_pages = max(1, (total_items + self.ITEMS_PER_PAGE - 1) // self.ITEMS_PER_PAGE)
             
-            # Add new page if not last
-            if page_num < total_pages - 1:
-                c.showPage()
-        
-        c.save()
-        output.seek(0)
-        return output.getvalue()
+            logger.info(f"Generating {total_pages} pages for {total_items} items")
+            
+            from reportlab.pdfgen import canvas
+            c = canvas.Canvas(output, pagesize=letter)
+            
+            for page_num in range(total_pages):
+                start_idx = page_num * self.ITEMS_PER_PAGE
+                end_idx = min(start_idx + self.ITEMS_PER_PAGE, total_items)
+                page_items = items[start_idx:end_idx]
+                
+                self._draw_page(c, page_items, admin_data, page_num + 1, total_pages)
+                
+                if page_num < total_pages - 1:
+                    c.showPage()
+            
+            c.save()
+            output.seek(0)
+            logger.info("PDF generated successfully")
+            return output.getvalue()
+            
+        except Exception as e:
+            logger.error(f"PDF generation error: {e}")
+            raise Exception(f"Failed to generate PDF: {str(e)}")
     
     def _draw_page(self, c: canvas.Canvas, items: List[Dict], 
                    admin_data: Dict, page_num: int, total_pages: int):
         """Draw a single DD1750 page"""
-        width, height = letter
-        
-        # Draw form header and borders
-        self._draw_form_structure(c, width, height)
-        
-        # Draw admin information (only on first page or all pages as needed)
-        self._draw_admin_info(c, admin_data)
-        
-        # Draw page number
-        self._draw_page_number(c, page_num, total_pages)
-        
-        # Draw items
-        self._draw_items_table(c, items)
-        
-        # Draw certification section
-        self._draw_certification(c)
+        try:
+            width, height = letter
+            
+            # Set font
+            c.setFont("Helvetica-Bold", 10)
+            
+            # Form title
+            c.drawString(inch * 1.0, height - inch * 0.8, "PACKING LIST")
+            c.setFont("Helvetica", 8)
+            c.drawString(inch * 5.0, height - inch * 0.8, "DD FORM 1750, SEP 70 (EG)")
+            
+            # Draw admin info
+            self._draw_admin_info(c, admin_data, height)
+            
+            # Draw page number
+            c.setFont("Helvetica", 8)
+            c.drawString(inch * 5.0, height - inch * 1.5, f"PAGE {page_num} OF {total_pages}")
+            
+            # Draw table header
+            self._draw_table_header(c, height)
+            
+            # Draw items
+            self._draw_items(c, items, height)
+            
+        except Exception as e:
+            logger.error(f"Page drawing error: {e}")
+            raise
     
-    def _draw_form_structure(self, c: canvas.Canvas, width: float, height: float):
-        """Draw the basic DD1750 form structure"""
-        c.setFont("Helvetica-Bold", 10)
-        
-        # Form title
-        c.drawString(inch * 1.0, height - inch * 0.8, "PACKING LIST")
-        c.setFont("Helvetica", 8)
-        c.drawString(inch * 5.0, height - inch * 0.8, "DD FORM 1750, SEP 70 (EG)")
-        
-        # Draw main box border
-        c.setLineWidth(1)
-        c.rect(inch * 0.5, self.TABLE_END_Y, width - inch, height - inch * 1.5 - self.TABLE_END_Y)
-        
-        # Draw table header
-        c.setFont("Helvetica-Bold", 7)
-        c.drawString(self.COL_BOX, self.TABLE_START_Y, "BOX")
-        c.drawString(self.COL_BOX, self.TABLE_START_Y + 8, "NO.")
-        
-        c.drawString(self.COL_STOCK, self.TABLE_START_Y, "CONTENTS - STOCK")
-        c.drawString(self.COL_STOCK, self.TABLE_START_Y + 8, "NUMBER AND")
-        c.drawString(self.COL_STOCK, self.TABLE_START_Y + 16, "NOMENCLATURE")
-        
-        c.drawString(self.COL_UNIT, self.TABLE_START_Y, "UNIT")
-        c.drawString(self.COL_UNIT, self.TABLE_START_Y + 8, "OF")
-        c.drawString(self.COL_UNIT, self.TABLE_START_Y + 16, "ISSUE")
-        
-        c.drawString(self.COL_QTY_INIT, self.TABLE_START_Y, "QUANTITIES REQUIRED")
-        c.drawString(self.COL_QTY_INIT, self.TABLE_START_Y + 8, "INITIAL")
-        c.drawString(self.COL_QTY_INIT, self.TABLE_START_Y + 16, "OPERATION")
-        
-        c.drawString(self.COL_QTY_RUN, self.TABLE_START_Y + 8, "RUNNING")
-        c.drawString(self.COL_QTY_RUN, self.TABLE_START_Y + 16, "SPARES")
-        
-        c.drawString(self.COL_QTY_TOTAL, self.TABLE_START_Y + 8, "TOTAL")
-        
-        # Draw header line
-        c.line(inch * 0.5, self.TABLE_START_Y - 5, width - inch * 0.5, self.TABLE_START_Y - 5)
-    
-    def _draw_admin_info(self, c: canvas.Canvas, admin_data: Dict):
-        """Draw admin information in header section"""
+    def _draw_admin_info(self, c: canvas.Canvas, admin_data: Dict, page_height: float):
+        """Draw admin information"""
         c.setFont("Helvetica-Bold", 7)
         
-        # Field labels
-        c.drawString(inch * 0.6, self.HEADER_Y - 20, "PACKED BY:")
-        c.drawString(inch * 0.6, self.HEADER_Y - 40, "NO. BOXES:")
-        c.drawString(inch * 0.6, self.HEADER_Y - 60, "REQUISITION NO.:")
-        c.drawString(inch * 0.6, self.HEADER_Y - 80, "ORDER NO.:")
-        c.drawString(inch * 4.5, self.HEADER_Y - 60, "DATE:")
+        # Labels
+        y_pos = page_height - inch * 2.2
+        c.drawString(inch * 0.6, y_pos, "PACKED BY:")
+        c.drawString(inch * 0.6, y_pos - 20, "NO. BOXES:")
+        c.drawString(inch * 0.6, y_pos - 40, "REQUISITION NO.:")
+        c.drawString(inch * 0.6, y_pos - 60, "ORDER NO.:")
+        c.drawString(inch * 4.5, y_pos - 40, "DATE:")
         
-        # Field values
+        # Values
         c.setFont("Helvetica", 8)
         if admin_data.get('packed_by'):
-            c.drawString(inch * 1.5, self.HEADER_Y - 20, admin_data['packed_by'])
+            c.drawString(inch * 1.5, y_pos, admin_data['packed_by'][:50])
         if admin_data.get('no_boxes'):
-            c.drawString(inch * 1.5, self.HEADER_Y - 40, admin_data['no_boxes'])
+            c.drawString(inch * 1.5, y_pos - 20, admin_data['no_boxes'])
         if admin_data.get('requisition_no'):
-            c.drawString(inch * 2.2, self.HEADER_Y - 60, admin_data['requisition_no'])
+            c.drawString(inch * 2.2, y_pos - 40, admin_data['requisition_no'][:30])
         if admin_data.get('order_no'):
-            c.drawString(inch * 1.5, self.HEADER_Y - 80, admin_data['order_no'])
+            c.drawString(inch * 1.5, y_pos - 60, admin_data['order_no'][:30])
         if admin_data.get('date'):
-            c.drawString(inch * 5.0, self.HEADER_Y - 60, admin_data['date'])
+            c.drawString(inch * 5.0, y_pos - 40, admin_data['date'])
     
-    def _draw_page_number(self, c: canvas.Canvas, page_num: int, total_pages: int):
-        """Draw page number in format: PAGE X OF Y"""
-        c.setFont("Helvetica", 8)
-        page_text = f"PAGE {page_num} OF {total_pages}"
-        c.drawString(inch * 5.0, self.HEADER_Y, page_text)
+    def _draw_table_header(self, c: canvas.Canvas, page_height: float):
+        """Draw table header"""
+        y_pos = page_height - inch * 3.0
+        
+        c.setFont("Helvetica-Bold", 7)
+        c.drawString(inch * 0.6, y_pos, "BOX NO.")
+        c.drawString(inch * 1.2, y_pos, "CONTENTS - STOCK NUMBER AND NOMENCLATURE")
+        c.drawString(inch * 5.5, y_pos, "UNIT")
+        c.drawString(inch * 6.0, y_pos, "QTY")
+        c.drawString(inch * 6.5, y_pos, "TOTAL")
+        
+        # Header line
+        c.setLineWidth(1)
+        c.line(inch * 0.5, y_pos - 10, inch * 7.5, y_pos - 10)
     
-    def _draw_items_table(self, c: canvas.Canvas, items: List[Dict]):
+    def _draw_items(self, c: canvas.Canvas, items: List[Dict], page_height: float):
         """Draw items in the table"""
         c.setFont("Helvetica", 7)
         
+        start_y = page_height - inch * 3.5
+        
         for idx, item in enumerate(items):
-            y_pos = self.TABLE_START_Y - 20 - (idx * self.ROW_HEIGHT)
+            y_pos = start_y - (idx * self.ROW_HEIGHT)
             
-            if y_pos < self.TABLE_END_Y:
-                break  # Don't draw below table
+            if y_pos < inch * 2.0:
+                break  # Don't draw below footer
             
-            # Draw row line
-            c.line(inch * 0.5, y_pos - 12, inch * 7.5, y_pos - 12)
+            # Row line
+            c.line(inch * 0.5, y_pos - 15, inch * 7.5, y_pos - 15)
             
-            # Draw item data
+            # Item data
             if item.get('box_no'):
-                c.drawString(self.COL_BOX, y_pos, item['box_no'])
+                c.drawString(inch * 0.6, y_pos, item['box_no'])
             
+            # Combine stock number and nomenclature
+            item_text = ""
             if item.get('stock_number'):
-                c.drawString(self.COL_STOCK, y_pos, item['stock_number'])
-            
+                item_text = item['stock_number']
             if item.get('nomenclature'):
-                c.drawString(self.COL_STOCK + 80, y_pos, item['nomenclature'])
+                if item_text:
+                    item_text += " "
+                item_text += item['nomenclature']
+            
+            # Truncate if too long
+            if len(item_text) > 50:
+                item_text = item_text[:50] + "..."
+            
+            c.drawString(inch * 1.2, y_pos, item_text)
             
             if item.get('unit_issue'):
-                c.drawString(self.COL_UNIT, y_pos, item['unit_issue'])
-            
-            if item.get('qty_init'):
-                c.drawString(self.COL_QTY_INIT, y_pos, item['qty_init'])
-            
-            if item.get('qty_run'):
-                c.drawString(self.COL_QTY_RUN, y_pos, item['qty_run'])
+                c.drawString(inch * 5.5, y_pos, item['unit_issue'])
             
             # Calculate total
             try:
@@ -181,43 +163,6 @@ class DD1750Generator:
                 run_qty = float(item['qty_run']) if item.get('qty_run') else 0
                 total = init_qty + run_qty
                 if total > 0:
-                    c.drawString(self.COL_QTY_TOTAL, y_pos, str(int(total)))
+                    c.drawString(inch * 6.5, y_pos, str(int(total)))
             except (ValueError, TypeError):
                 pass
-    
-    def _draw_certification(self, c: canvas.Canvas):
-        """Draw certification section at bottom"""
-        c.setFont("Helvetica", 7)
-        y_pos = self.TABLE_END_Y - 30
-        
-        cert_text = (
-            "I CERTIFY THAT THE ABOVE ARTICLES ARE PROPERLY PACKED AND MARKED. "
-            "I FURTHER CERTIFY THAT THE ARTICLES HAVE BEEN RECEIVED FROM THE "
-            "INDIVIDUALS LISTED ABOVE AS HAVING DRAWN THEM."
-        )
-        
-        # Word wrap certification text
-        words = cert_text.split()
-        line = ""
-        x_pos = inch * 0.6
-        y_pos = self.TABLE_END_Y - 20
-        
-        for word in words:
-            test_line = line + word + " "
-            if c.stringWidth(test_line, "Helvetica", 7) < inch * 6.5:
-                line = test_line
-            else:
-                c.drawString(x_pos, y_pos, line)
-                line = word + " "
-                y_pos -= 10
-        
-        if line:
-            c.drawString(x_pos, y_pos, line)
-        
-        # Signature lines
-        y_pos -= 25
-        c.line(inch * 0.6, y_pos, inch * 3.0, y_pos)
-        c.drawString(inch * 0.6, y_pos - 10, "TYPED NAME AND TITLE")
-        
-        c.line(inch * 3.5, y_pos, inch * 6.0, y_pos)
-        c.drawString(inch * 3.5, y_pos - 10, "SIGNATURE")
