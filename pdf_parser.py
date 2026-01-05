@@ -7,21 +7,23 @@ class DD1750Parser:
             with pdfplumber.open(pdf_bytes) as pdf:
                 page = pdf.pages[0]
                 text = page.extract_text() or ""
-                if "PACKED BY" in text:
-                    idx = text.find("PACKED BY")
-                    after = text[idx + 9:].strip()
-                    if after:
-                        admin_data['packed_by'] = after[:50].split('\n')[0].strip()
-                if "REQUISITION NO." in text:
-                    idx = text.find("REQUISITION NO.")
-                    after = text[idx + 15:].strip()
-                    if after:
-                        admin_data['requisition_no'] = after[:30].split('\n')[0].strip()
-                if "ORDER NO." in text:
-                    idx = text.find("ORDER NO.")
-                    after = text[idx + 9:].strip()
-                    if after:
-                        admin_data['order_no'] = after[:30].split('\n')[0].strip()
+                
+                for line in text.split('\n'):
+                    line = line.strip()
+                    if "PACKED BY" in line and ":" in line:
+                        parts = line.split(":")
+                        if len(parts) > 1:
+                            admin_data['packed_by'] = parts[1].strip()[:50]
+                    elif "REQUISITION" in line and "NO" in line:
+                        parts = line.split("NO")
+                        if len(parts) > 1:
+                            admin_data['requisition_no'] = parts[1].replace(".", "").strip()[:30]
+                    elif "ORDER" in line and "NO" in line:
+                        parts = line.split("NO")
+                        if len(parts) > 1:
+                            admin_data['order_no'] = parts[1].replace(".", "").strip()[:30]
+                    elif line.replace(".", "").isdigit() and len(line) >= 8:
+                        admin_data['date'] = line[:15]
         except:
             pass
         return admin_data
@@ -30,21 +32,31 @@ class DD1750Parser:
         items = []
         try:
             with pdfplumber.open(pdf_bytes) as pdf:
-                for page in pdf.pages:
+                for page_num, page in enumerate(pdf.pages):
+                    text = page.extract_text() or ""
+                    
                     tables = page.extract_tables()
-                    if tables:
-                        for row in tables[0][1:]:
-                            if row and len(row) >= 3:
-                                box_no = str(row[0]).strip() if row[0] else ""
-                                if box_no and box_no.lower() not in ['box', 'no.', 'number']:
-                                    items.append({
-                                        'box_no': box_no,
-                                        'stock_number': str(row[1]).strip() if row[1] else "",
-                                        'nomenclature': str(row[2]).strip() if row[2] else "",
-                                        'unit_issue': 'EA',
-                                        'qty_init': '1',
-                                        'qty_run': '0'
-                                    })
-        except:
-            pass
-        return items
+                    if tables and len(tables) > 0:
+                        table = tables[0]
+                        
+                        for row in table:
+                            if not row or len(row) < 2:
+                                continue
+                            
+                            first_col = str(row[0]).strip() if row[0] else ""
+                            
+                            if first_col and first_col.replace(".", "").isdigit():
+                                items.append({
+                                    'box_no': first_col,
+                                    'stock_number': '',
+                                    'nomenclature': str(row[1]).strip() if row[1] else "",
+                                    'unit_issue': 'EA',
+                                    'qty_init': '1',
+                                    'qty_run': '0'
+                                })
+                            elif len(items) > 0 and first_col:
+                                items[-1]['stock_number'] += " " + first_col
+                            elif len(items) > 0 and row[1]:
+                                items[-1]['nomenclature'] += " " + str(row[1]).strip()
+                    
+                    if not items and
