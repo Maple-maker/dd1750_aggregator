@@ -1,40 +1,58 @@
-from flask import Flask, request, send_file, render_template_string, jsonify
-from io import BytesIO
+from flask import Flask, jsonify
 import os
-import sys
-import traceback
-import logging
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-prod')
+app.secret_key = os.environ.get('SECRET_KEY', 'default-secret-key')
 
-# Health check endpoint
 @app.route('/health')
 def health():
-    return jsonify({'status': 'healthy', 'service': 'dd1750-merger'}), 200
+    return jsonify({'status': 'ok'}), 200
 
 @app.route('/')
 def index():
-    try:
-        return render_template_string('''
+    return '''
 <!DOCTYPE html>
 <html>
 <head>
     <title>DD1750 Merger</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        body { font-family: Arial; max-width: 800px; margin: 50px auto; padding: 20px; }
         h1 { color: #2c3e50; }
-        .upload-section { border: 2px dashed #3498db; padding: 30px; margin: 20px 0; border-radius: 8px; background: #f8f9fa; }
+        .upload-section { border: 2px dashed #3498db; padding: 30px; margin: 20px 0; }
         input[type="file"] { margin: 10px 0; width: 100%; padding: 10px; }
-        button { background: #3498db; color: white; padding: 12px 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; }
-        button:hover { background: #2980b9; }
-        .error { color:
+        button { background: #3498db; color: white; padding: 12px 24px; border: none; cursor: pointer; font-size: 16px; width: 100%; }
+    </style>
+</head>
+<body>
+    <h1>DD1750 PDF Merger</h1>
+    
+    <form action="/merge" method="post" enctype="multipart/form-data">
+        <div class="upload-section">
+            <h3>Items PDF</h3>
+            <input type="file" name="items_pdf" accept=".pdf" required>
+        </div>
+        
+        <div class="upload-section">
+            <h3>Admin PDF</h3>
+            <input type="file" name="admin_pdf" accept=".pdf" required>
+        </div>
+        
+        <button type="submit">Merge PDFs</button>
+    </form>
+</body>
+</html>
+    '''
+
+@app.route('/merge', methods=['POST'])
+def merge():
+    from io import BytesIO
+    from flask import send_file
+    
+    if 'items_pdf' not in request.files or 'admin_pdf' not in request.files:
+        return 'Both files required', 400
+    
+    return 'Merging - full version coming soon', 200
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
