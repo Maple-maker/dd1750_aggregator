@@ -8,22 +8,22 @@ class DD1750Parser:
                 page = pdf.pages[0]
                 text = page.extract_text() or ""
                 
-                for line in text.split('\n'):
+                lines = text.split('\n')
+                for line in lines:
                     line = line.strip()
-                    if "PACKED BY" in line and ":" in line:
-                        parts = line.split(":")
-                        if len(parts) > 1:
-                            admin_data['packed_by'] = parts[1].strip()[:50]
+                    if "PACKED BY" in line:
+                        if ":" in line:
+                            parts = line.split(":")
+                            if len(parts) > 1:
+                                admin_data['packed_by'] = parts[1].strip()[:50]
                     elif "REQUISITION" in line and "NO" in line:
-                        parts = line.split("NO")
-                        if len(parts) > 1:
-                            admin_data['requisition_no'] = parts[1].replace(".", "").strip()[:30]
+                        idx = line.find("NO") + 2
+                        if idx < len(line):
+                            admin_data['requisition_no'] = line[idx:].strip()[:30]
                     elif "ORDER" in line and "NO" in line:
-                        parts = line.split("NO")
-                        if len(parts) > 1:
-                            admin_data['order_no'] = parts[1].replace(".", "").strip()[:30]
-                    elif line.replace(".", "").isdigit() and len(line) >= 8:
-                        admin_data['date'] = line[:15]
+                        idx = line.find("NO") + 2
+                        if idx < len(line):
+                            admin_data['order_no'] = line[idx:].strip()[:30]
         except:
             pass
         return admin_data
@@ -34,29 +34,36 @@ class DD1750Parser:
             with pdfplumber.open(pdf_bytes) as pdf:
                 for page_num, page in enumerate(pdf.pages):
                     text = page.extract_text() or ""
+                    lines = text.split('\n')
                     
-                    tables = page.extract_tables()
-                    if tables and len(tables) > 0:
-                        table = tables[0]
+                    for line in lines:
+                        line = line.strip()
+                        if not line:
+                            continue
                         
-                        for row in table:
-                            if not row or len(row) < 2:
-                                continue
+                        words = line.split()
+                        if not words:
+                            continue
+                        
+                        first_word = words[0]
+                        
+                        if first_word.isdigit():
+                            box_num = first_word
+                            rest_of_line = ' '.join(words[1:])
                             
-                            first_col = str(row[0]).strip() if row[0] else ""
-                            
-                            if first_col and first_col.replace(".", "").isdigit():
-                                items.append({
-                                    'box_no': first_col,
-                                    'stock_number': '',
-                                    'nomenclature': str(row[1]).strip() if row[1] else "",
-                                    'unit_issue': 'EA',
-                                    'qty_init': '1',
-                                    'qty_run': '0'
-                                })
-                            elif len(items) > 0 and first_col:
-                                items[-1]['stock_number'] += " " + first_col
-                            elif len(items) > 0 and row[1]:
-                                items[-1]['nomenclature'] += " " + str(row[1]).strip()
-                    
-                    if not items and
+                            items.append({
+                                'box_no': box_num,
+                                'stock_number': '',
+                                'nomenclature': rest_of_line[:80],
+                                'unit_issue': 'EA',
+                                'qty_init': '1',
+                                'qty_run': '0'
+                            })
+                        elif items and first_word[0].isdigit():
+                            items[-1]['nomenclature'] += " " + line[:80]
+        
+        except Exception as e:
+            print(f"Parse error: {e}")
+        
+        print(f"Extracted {len(items)} items")
+        return items
