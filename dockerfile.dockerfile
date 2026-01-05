@@ -3,6 +3,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY app.py .
-EXPOSE 5000
-ENV PORT=5000
-CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:5000", "app:app"]
+EXPOSE 8080
+ENV PORT=8080
+CMD ["gunicorn", "-w", "1", "-b", "0.0.0.0:8080", "app:app"]
